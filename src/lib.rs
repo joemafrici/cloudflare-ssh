@@ -8,7 +8,7 @@ use std::process::Command;
 use std::process::Stdio;
 
 use ssh2::Session;
-struct CloudflareSsh {
+pub struct CloudflareSsh {
     session: Session,
 }
 impl CloudflareSsh {
@@ -40,14 +40,14 @@ impl CloudflareSsh {
         &self,
         local_path: &str,
         remote_path: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let local_file = File::open(local_path)?;
+    ) -> Result<u64, Box<dyn std::error::Error>> {
+        let mut local_file = File::open(local_path)?;
         let metadata = local_file.metadata()?;
         let mut remote_file =
             self.session
                 .scp_send(Path::new(remote_path), 0o644, metadata.len(), None)?;
-        std::io::copy(&mut File::open(local_path)?, &mut remote_file)?;
-        Ok(())
+        let bytes_sent = std::io::copy(&mut local_file, &mut remote_file)?;
+        Ok(bytes_sent)
     }
 }
 
