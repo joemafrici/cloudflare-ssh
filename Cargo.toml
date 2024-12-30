@@ -1,0 +1,8 @@
+[package]
+name = "cloudflare-ssh"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libc = "0.2.169"
+ssh2 = "0.9.4"
