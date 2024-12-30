@@ -22,7 +22,7 @@ impl CloudflareSsh {
             .stdout(unsafe { Stdio::from_raw_fd(stdout_fd) })
             .spawn()?;
 
-        let mut session = Session::new().expect("Failed to create session");
+        let mut session = Session::new()?;
         session.set_tcp_stream(our_socket);
         session.handshake()?;
         session.userauth_agent("deepwater")?;
@@ -41,7 +41,7 @@ impl CloudflareSsh {
         local_path: &str,
         remote_path: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let local_file = File::open(local_path).expect("Failed to open local file");
+        let local_file = File::open(local_path)?;
         let metadata = local_file.metadata()?;
         let mut remote_file =
             self.session
