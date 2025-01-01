@@ -11,6 +11,50 @@ use ssh2::Session;
 pub struct CloudflareSsh {
     session: Session,
 }
+
+pub fn bootstrap(app_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let (our_socket, proxy_socket) = UnixStream::pair()?;
+    let proxy_fd = proxy_socket.into_raw_fd();
+    let stdout_fd = unsafe { libc::dup(proxy_fd) };
+    Command::new("cloudflared")
+        .args(["access", "ssh", "--hostname", "ssh.gojoe.dev"])
+        .stdin(unsafe { Stdio::from_raw_fd(proxy_fd) })
+        .stdout(unsafe { Stdio::from_raw_fd(stdout_fd) })
+        .spawn()?;
+
+    let mut session = Session::new()?;
+    session.set_tcp_stream(our_socket);
+    session.handshake()?;
+    session.userauth_agent("root")?;
+
+    let sudoers_content = format!(
+        "deepwater ALL=(ALL) NOPASSWD: /bin/mkdir -p /opt/{app_name}
+         deepwater ALL=(ALL) NOPASSWD: /bin/chown -R deepwater\\:deepwater /opt/{app_name}
+         deepwater ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
+         deepwater ALL=(ALL) NOPASSWD: /usr/bin/systemctl start {app_name}
+         deepwater ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop {app_name}
+         deepwater ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart {app_name}\n"
+    );
+
+    let mut channel = session.channel_session()?;
+    channel.exec(&format!(
+        "echo '{}' > /etc/sudoers.d/{} && chmod 440 /etc/sudoers.d/{} && visudo -c",
+        sudoers_content, app_name, app_name
+    ))?;
+
+    // Wait for command to complete and check output
+    let mut output = String::new();
+    channel.read_to_string(&mut output)?;
+    channel.wait_close()?;
+    println!("bootstrap: {}", output);
+
+    if channel.exit_status()? != 0 {
+        return Err("Failed to setup sudoers file".into());
+    }
+
+    Ok(())
+}
+
 impl CloudflareSsh {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let (our_socket, proxy_socket) = UnixStream::pair()?;
@@ -31,9 +75,31 @@ impl CloudflareSsh {
     }
     pub fn exec(&self, cmd: &str) -> Result<String, Box<dyn std::error::Error>> {
         let mut channel = self.session.channel_session()?;
-        channel.exec(cmd)?;
+        // this may not work but we still want to continue even if it fails
+        // also apparently it could say it worked even if it didn't so
+        // I'm not even bothering to check the response
+        //
+        // rust should be installed before using this tool which currently
+        // just deploys rust programs
+        let _ = channel.setenv(
+            "PATH",
+            "/home/deepwater/.cargo/bin:/usr/local/bin:/usr/bin:/bin",
+        );
+        channel.exec(&format!("bash -l -c '{}'", cmd))?;
         let mut output = String::new();
-        channel.read_to_string(&mut output)?;
+        let mut buffer = vec![0; 1024];
+        while channel.read(&mut buffer)? > 0 {
+            let chunk = String::from_utf8_lossy(&buffer);
+            print!("{}", chunk);
+            output.push_str(&chunk);
+        }
+        channel.wait_close()?;
+
+        let exit_status = channel.exit_status()?;
+        if exit_status != 0 {
+            return Err(format!("command failed with exit status {}", exit_status).into());
+        }
+
         Ok(output)
     }
     pub fn scp(
