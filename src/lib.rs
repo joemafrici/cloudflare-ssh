@@ -12,7 +12,7 @@ pub struct CloudflareSsh {
     session: Session,
 }
 
-pub fn bootstrap(app_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn bootstrap(app_name: &str, remote_username: &str) -> Result<(), Box<dyn std::error::Error>> {
     let (our_socket, proxy_socket) = UnixStream::pair()?;
     let proxy_fd = proxy_socket.into_raw_fd();
     let stdout_fd = unsafe { libc::dup(proxy_fd) };
@@ -28,12 +28,14 @@ pub fn bootstrap(app_name: &str) -> Result<(), Box<dyn std::error::Error>> {
     session.userauth_agent("root")?;
 
     let sudoers_content = format!(
-        "deepwater ALL=(ALL) NOPASSWD: /bin/mkdir -p /opt/{app_name}
-         deepwater ALL=(ALL) NOPASSWD: /bin/chown -R deepwater\\:deepwater /opt/{app_name}
-         deepwater ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
-         deepwater ALL=(ALL) NOPASSWD: /usr/bin/systemctl start {app_name}
-         deepwater ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop {app_name}
-         deepwater ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart {app_name}\n"
+        "{remote_username} ALL=(ALL) NOPASSWD: /bin/mkdir -p /opt/{app_name}
+         {remote_username} ALL=(ALL) NOPASSWD: /bin/chown -R {remote_username}\\:{remote_username}/opt/{app_name}
+         {remote_username} ALL=(ALL) NOPASSWD: /bin/chown -R {remote_username}\\:{remote_username}/etc/systemd/system
+         {remote_username} ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/systemd/system/{app_name}.service
+         {remote_username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
+         {remote_username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl start {app_name}
+         {remote_username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop {app_name}
+         {remote_username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart {app_name}\n"
     );
 
     let mut channel = session.channel_session()?;
@@ -74,6 +76,7 @@ impl CloudflareSsh {
         Ok(Self { session })
     }
     pub fn exec(&self, cmd: &str) -> Result<String, Box<dyn std::error::Error>> {
+        println!("executing command: {}", cmd);
         let mut channel = self.session.channel_session()?;
         // this may not work but we still want to continue even if it fails
         // also apparently it could say it worked even if it didn't so
