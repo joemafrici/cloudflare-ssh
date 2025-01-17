@@ -25,17 +25,22 @@ pub fn bootstrap(app_name: &str, remote_username: &str) -> Result<(), Box<dyn st
     let mut session = Session::new()?;
     session.set_tcp_stream(our_socket);
     session.handshake()?;
-    session.userauth_agent("root")?;
+    session.userauth_agent("deepwater")?;
 
     let sudoers_content = format!(
-        "{remote_username} ALL=(ALL) NOPASSWD: /bin/mkdir -p /opt/{app_name}
+        "{remote_username} ALL=(ALL) NOPASSWD: /bin/mkdir -p /opt/{app_name}-green
+         {remote_username} ALL=(ALL) NOPASSWD: /bin/mkdir -p /opt/{app_name}-blue
          {remote_username} ALL=(ALL) NOPASSWD: /bin/chown -R {remote_username}\\:{remote_username}/opt/{app_name}
          {remote_username} ALL=(ALL) NOPASSWD: /bin/chown -R {remote_username}\\:{remote_username}/etc/systemd/system
-         {remote_username} ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/systemd/system/{app_name}.service
+         {remote_username} ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/systemd/system/{app_name}-green.service
+         {remote_username} ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/systemd/system/{app_name}-blue.service
          {remote_username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
-         {remote_username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl start {app_name}
-         {remote_username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop {app_name}
-         {remote_username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart {app_name}\n"
+         {remote_username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl start {app_name}-green
+         {remote_username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl start {app_name}-blue
+         {remote_username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop {app_name}-green
+         {remote_username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop {app_name}-blue
+         {remote_username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart {app_name}-green\n
+         {remote_username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart {app_name}-blue\n"
     );
 
     let mut channel = session.channel_session()?;
